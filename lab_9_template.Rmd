@@ -30,7 +30,8 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 ```{r packages, include = FALSE}
 
 # a. Load packages 'tidyverse' and 'stargazer':
-
+library(tidyverse)
+library(stargazer)
 
 
 ```
@@ -41,9 +42,12 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 
 # a. Read in data as 'homes':
 
+homes <- read_csv("slo_homes.csv")
 
 # b. Filter to only include cities "San Luis Obispo", "Santa Maria-Orcutt", "Atascadero", and "Arroyo Grande", and call this new subset 'homes_sub':
 
+homes_sub <- homes %>%
+  filter(City == "Arroyo Grande" | City == "San Luis Obispo" | City == "Atascadero" | City == "Santa Maria-Orcutt")
 
 
 ```
@@ -64,6 +68,7 @@ mean_by_city <- homes_sub %>%
   )
 
 # b. Visualize prices by city
+# density distribution = bins are centered around observations not set intervals
 by_city <- ggplot(homes_sub, aes(x = Price)) +
   geom_density(aes(color = City, fill = City), alpha = 0.3) + # Note: just to show what the geom_violin shows
   theme_classic() +
@@ -72,6 +77,8 @@ by_city <- ggplot(homes_sub, aes(x = Price)) +
   labs(x = "Home Prices (USD)", y = "Density")
 
 by_city
+
+# noticeable: Santa Maria - bulk of housing prices look lower than other three groups
 
 ```
 
@@ -86,7 +93,13 @@ by_sqft <- ggplot(homes_sub, aes(x = SqFt, y = Price)) +
 
 by_sqft
 
-# Observations here: Does relationship appear ~ linear? Anything else we can pick out re: trends, outliers, etc.? What is the general trend? Any outliers? Is there reason enough for us to omit it?
+# Observations here: Does relationship appear ~ linear? YES 
+# Anything else we can pick out re: trends, outliers, etc.? What is the general trend? Any outliers? Is there reason enough for us to omit it?
+
+# overall makes sense to describe relationship using multiple linear regression - observations are randomly collected
+# normality of residuals?
+# variance change?
+# need to create the model FIRST to test these things!
 
 ```
 
@@ -105,10 +118,25 @@ Use summary() to view the model output and statistics.
 
 ```{r saturated}
 
+# trying to predict the size of a house as it relates to predictor variables
+
 # a. Saturated model: 
+
+homes_lm1 <- lm(Price ~ City + Bedrooms + Bathrooms + SqFt + PricePerSqFt + Status, data = homes_sub)
+
+# PricePerSqFt makes no sense to include because using a variable calculated from dependent variable Price --- Biased overfitting of model results
+# reference level for sale status - Forclosure, for City - Arroyo Grande (the ones that dont show up in the output)
+# output suggests the price of regular house is less than price of forclosed house, increase in bedroom is equal to $30,000 reduction in price
+# WHATS HAPPENING - if variables exist in a model are very strongly correllated you might get colinarity and a misleading model
+# which three predictor variables are all telling kind of the same thing about the house - bedrooms, bathrooms and sqft all are telling us something about how big the house is
+# just pick one! 
+
 
 
 # b. Model summary:
+
+summary(homes_lm1)
+# estimates for coefficients, error, hypothesis test of each coefficient
 
 ```
 
@@ -118,7 +146,26 @@ The next model: Exclude price per square foot, and bedrooms/bathrooms (since the
 
 # a. Updated model with variables City, SqFt, and Status:
 
+homes_lm2 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
+
+homes_lm2
+
+# slope of a coefficient is how much the outcome variable will change if all else is the same
+# if everything else is the same, we would expect a house in SLO to sell for $34,525 more than the same one in Arroyo Grande
+# other things make sense in this model!
+# price per sqft is about $250 - just about average!
+# coefficient for "status regular" means that all else exactly the same, a house with a regular status will sell for about $210,000 more than a house in forclosure
+
+
 # b. Model summary:
+
+summary(homes_lm2)
+
+# status of short sale - highly nonsignificant value - not a big difference in price of house sold in short sale vs. forclosure
+# status regular - significant
+# city that has a housing price most similar to Arroyo Grande = SLO, both other cities prices are significantly different than Arroyo Grande
+# use adjusted R - squared for multiple linear regression - NO SUCH THING AS A GOOD OR BAD R SQUARED VALUE
+# overall pvalue - the model significantly predicts housing prices better than random chance would
 
 ```
 
@@ -127,21 +174,25 @@ Wait...but what if I wanted everything to be with respect to a Regular sale stat
 ```{r fct_relevel}
 
 # a. Set Status to class 'factor'
+homes_sub$Status <- factor(homes_sub$Status)
 
 
 # b. Check to ensure it's a factor now
-
+# use class() in console to check!
 
 # c. Check levels:
-
+levels(homes_sub$Status)
+# output tells you the order of the factor levels
 
 # d. Reassign reference level of "Status" to "Regular":
+homes_sub$Status <- fct_relevel(homes_sub$Status, "Regular")
 
 
 # e. Now run the regression again - same equation, but now the reference level is different (Status = Regular): 
 
+homes_lm3 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
 
-
+summary(homes_lm3)
 ```
 
 Interpret the coefficients and statistical outcomes above. 
@@ -157,6 +208,15 @@ Then we can evaluate model diagnostics using the plot() function:
 
 # a. Model diagnostics:
 
+plot(homes_lm3)
+
+# residual vs fitted - does it look like vertical scatter is getting way bigger? not really anything to worry about
+# qq plot - does it look like overall residuals are pretty normally distributed? YES! dont let a few values throw you off
+# ignore the red line on these plots!
+# overall, heteroscedasticity is OK, residuals normality definitely looks good, conceptually and mathematically my model is making sense!
+
+
+
 ```
 
 ###6. Model comparison by Akaike Information Criterion
@@ -165,9 +225,16 @@ The AIC is a quantitative metric for model "optimization" that balances complexi
 
 ```{r AIC}
 
-# a. AIC values for each model
+# a. AIC values for each model: not a way out of thinking critically about model inputs!
+
+sat_aic <- AIC(homes_lm1)
+sat_aic
+final_aic <- AIC(homes_lm3)
+final_aic
+# a lower AIC value shows the model that has the best balance of complexity and predictive capability (SHOULD NEVER BASE A MODEL DECISION SOLELY ON THIS)
 
 # Answer: which would you pick? 
+# I would still pick homes_lm3 because : heteroscedasticity is OK, residuals normality definitely looks good, conceptually and mathematically my model is making sense!
 
 ```
 
@@ -176,8 +243,10 @@ The AIC is a quantitative metric for model "optimization" that balances complexi
 ```{r stargazer, results = 'asis'}
 
 # a. Prepare a nice regression table:
+lm_table <- stargazer(homes_lm1, homes_lm3, type = "html")
 
 
+# to get table into word format - open html doc from github folder as a word doc and then edit table or open as html and then copy and paste into word 
 
 # Note: If you want to work with this in Word, save to html, open, copy and paste into Word. 
 
@@ -221,6 +290,7 @@ df_new <- data.frame(City = rep(c("San Luis Obispo",
                                   times = 12, 
                                   each = 20))
 
+
 ```
 
 Make predictions for the new data using predict():
@@ -229,8 +299,16 @@ Make predictions for the new data using predict():
 
 # a. Make predictions using the new data frame:
 
+price_predict <- predict(homes_lm3, 
+                         newdata = df_new, 
+                         se.fit = TRUE, 
+                         interval = "confidence")
+
+
 # b. Bind predictions to the data to make it actually useful:
 
+predict_df <- data.frame(df_new, price_predict)
+# data.frame function lumps things together by column as long as they have the same rows
 
 
 ```
@@ -241,6 +319,13 @@ Then visualize it!
 
 # Create a line graph with square footage on the x-axis, predicted price on y-axis, with color dependent on City and facet_wrapped by sale status (follow along):
 
+predict_graph <- ggplot(predict_df, aes(x = SqFt, y = fit.fit))+
+  geom_line(aes(color = City))+
+  facet_wrap(~Status)
+
+predict_graph
+
+#prediction for homes in different cities for different squarefootage sold in different sale statuses
 
 ```
 
